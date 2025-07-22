@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <title>App Kích Thước – Ghi vào File Excel Mẫu</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 20px; max-width: 700px; margin: auto; }
+    input, button { font-size: 16px; padding: 6px; margin: 4px 6px 4px 0; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border: 1px solid #ccc; padding: 6px; text-align: center; }
+    tbody { display: block; max-height: 300px; overflow-y: auto; }
+    thead, tbody tr { display: table; width: 100%; table-layout: fixed; }
+  </style>
+</head>
+<body>
+  <h3>📏 Chọn file Excel mẫu → Nhập thêm cặp Rộng–Dài → Xuất lại file</h3>
+  <input type="text" id="inputField" placeholder="3015" autofocus />
+  <button onclick="exportExcel()">📤 Ghi vào file mẫu</button>
+  <button onclick="selectFile()">📂 Chọn file mẫu Excel</button>
+
+  <table>
+    <thead>
+      <tr><th>#</th><th>Rộng</th><th>Dài</th><th>Hành động</th></tr>
+    </thead>
+    <tbody id="body"></tbody>
+  </table>
+
+  <script>
+    const data = [];
+    let fileHandle = null;
+    const input = document.getElementById("inputField");
+    const body = document.getElementById("body");
+
+    input.addEventListener("keydown", e => {
+      if (e.key === "Enter") {
+        const val = input.value.trim();
+        if (val.length >= 4) {
+          const rong = parseInt(val.slice(0, 2));
+          const dai = parseInt(val.slice(2));
+          data.push({ rong, dai });
+          renderTable();
+        }
+        input.value = "";
+      }
+    });
+
+    function renderTable() {
+      body.innerHTML = "";
+      data.forEach((item, i) => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td>${i + 1}</td>
+          <td>${item.rong}</td>
+          <td>${item.dai}</td>
+          <td><button onclick="edit(${i})">Sửa</button></td>
+        `;
+        body.appendChild(row);
+        if (i === data.length - 1) {
+          setTimeout(() => row.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
+        }
+      });
+    }
+
+    function edit(i) {
+      const cur = data[i];
+      const old = `${String(cur.rong).padStart(2, '0')}${String(cur.dai).padStart(2, '0')}`;
+      const val = prompt("Nhập lại cặp số:", old);
+      if (val && val.length >= 4) {
+        data[i].rong = parseInt(val.slice(0, 2));
+        data[i].dai = parseInt(val.slice(2));
+        renderTable();
+      }
+    }
+
+    async function selectFile() {
+      try {
+        const [handle] = await window.showOpenFilePicker({
+          types: [{
+            description: 'Excel file',
+            accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] }
+          }]
+        });
+        fileHandle = handle;
+        const file = await handle.getFile();
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: 'array' });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet);
+        data.length = 0;
+        rows.forEach(row => {
+          if (row.R && row.D) data.push({ rong: row.R, dai: row.D });
+        });
+        renderTable();
+        alert("✅ Đã nạp dữ liệu từ file mẫu: " + handle.name);
+      } catch (err) {
+        alert("❌ Không thể mở file mẫu: " + err.message);
+      }
+    }
+
+    async function exportExcel() {
+      if (!fileHandle) {
+        alert("⚠️ Bạn chưa chọn file mẫu để ghi dữ liệu vào.");
+        return;
+      }
+
+      const groups = [];
+      const blockSize = 30;
+      for (let i = 0; i < data.length; i += blockSize) {
+        const group = data.slice(i, i + blockSize).map((pair, idx) => ({
+          Stt: idx + 1,
+          R: pair.rong,
+          D: pair.dai
+        }));
+        groups.push(group);
+      }
+
+      const final = [];
+      const maxRows = Math.max(...groups.map(g => g.length));
+      for (let r = 0; r < maxRows; r++) {
+        const row = {};
+        groups.forEach((g, i) => {
+          row[`Stt_${i + 1}`] = g[r]?.Stt || '';
+          row[`Rộng_${i + 1}`] = g[r]?.R || '';
+          row[`Dài_${i + 1}`] = g[r]?.D || '';
+        });
+        final.push(row);
+      }
+
+      try {
+        const ws = XLSX.utils.json_to_sheet(final);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "KichThuoc");
+
+        const blob = new Blob(
+          [XLSX.write(wb, { bookType: 'xlsx', type: 'array' })],
+          { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
+        );
+
+        const writable = await fileHandle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        alert("✅ Đã ghi dữ liệu mới vào file mẫu thành công!");
+      } catch (err) {
+        alert("❌ Ghi file thất bại: " + err.message);
+      }
+    }
+  </script>
+</body>
+</html>
